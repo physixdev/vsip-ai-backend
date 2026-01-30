@@ -1,24 +1,26 @@
 from flask import Flask, request, jsonify
-import openai
-import os
 from flask_cors import CORS
+import os
+from openai import OpenAI
 
 app = Flask(__name__)
 CORS(app)
 
-# Set up OpenAI client (new style)
-client = openai.OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 
 @app.route("/ask", methods=["POST"])
 def ask():
-    data = request.json
-    user_message = data.get("message", "")
+    data = request.get_json(silent=True) or {}
+    user_message = (data.get("message") or "").strip()
 
-    prompt = """
+    if not user_message:
+        return jsonify({"reply": "Please type a question."})
+
+    # KEEP THIS VSIPS PERSONALITY (edit text here anytime)
+    system_prompt = """
 You are VSIPS AI, the official assistant for the Vishal Sethi Institute of Pharmaceutical Sciences.
 
-You help prospective students understand the
-Pharmaceutical Manufacturing Technologist – Level 1 Training Manual.
+You help prospective students understand the Pharmaceutical Manufacturing Technologist – Level 1 Training Manual.
 
 Facts you MUST stay consistent with:
 - Intro price: CA$199 (regular CA$299)
@@ -33,24 +35,32 @@ Rules:
 - Be professional, calm, and reassuring
 - Do NOT promise jobs
 - If asked how to buy, tell them to click the Enroll button on the page
-"""
-
+""".strip()
 
     try:
-        response = client.chat.completions.create(
+        resp = client.chat.completions.create(
             model="gpt-3.5-turbo",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.7,
-            max_tokens=250
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_message},
+            ],
+            temperature=0.4,
+            max_tokens=250,
         )
-        print("🔍 FULL RESPONSE:", response)
-        answer = response.choices[0].message.content.strip()
+
+        answer = (resp.choices[0].message.content or "").strip()
         return jsonify({"reply": answer})
+
     except Exception as e:
-        import traceback
-        error_message = traceback.format_exc()
-        print("🔥 ERROR TRACEBACK:\\n", error_message)
-        return jsonify({"error": str(e)}), 500
+        # Show a safe message to the user; full error stays in Render logs
+        print("ERROR:", repr(e))
+        return jsonify({"reply": "VSIPS AI temporarily unavailable."}), 500
+
+
+@app.get("/")
+def home():
+    return "OK", 200
+
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", "10000")))
